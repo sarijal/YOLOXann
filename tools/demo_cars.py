@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding:utf-8 -*-
 # Copyright (c) Megvii, Inc. and its affiliates.
+import json
+from pathlib import Path
+
 
 import argparse
 import os
@@ -185,25 +188,71 @@ class Predictor(object):
 
 
 def image_demo(predictor, vis_folder, path, current_time, save_result):
-    if os.path.isdir(path):
-        files = get_image_list(path)
-    else:
-        files = [path]
+    # Initialize COCO JSON structure
+    coco_output = {
+        "images": [],
+        "annotations": [],
+        "categories": [{"id": 2, "name": "car"}]  # Only car category
+    }
+
+    image_id = 0
+    annotation_id = 1
+
+    # Get image files
+    files = get_image_list(path) if os.path.isdir(path) else [path]
     files.sort()
+
     for image_name in files:
         outputs, img_info = predictor.inference(image_name)
-        result_image = predictor.visual(outputs[0], img_info, predictor.confthre)
-        if save_result:
-            save_folder = os.path.join(
-                vis_folder, time.strftime("%Y_%m_%d_%H_%M_%S", current_time)
-            )
-            os.makedirs(save_folder, exist_ok=True)
-            save_file_name = os.path.join(save_folder, os.path.basename(image_name))
-            logger.info("Saving detection result in {}".format(save_file_name))
-            cv2.imwrite(save_file_name, result_image)
-        ch = cv2.waitKey(0)
-        if ch == 27 or ch == ord("q") or ch == ord("Q"):
-            break
+
+        # Keep only "car" detections (COCO category_id = 2)
+        car_class_id = 2
+        car_detections = []
+        if outputs[0] is not None:
+            for output in outputs[0]:
+                x1, y1, x2, y2, score, cls_id = output[:6]
+                if int(cls_id) == car_class_id and score > predictor.confthre:
+                    car_detections.append([x1, y1, x2, y2, score, int(cls_id)])
+
+        # Overwrite outputs to keep only car detections
+        outputs[0] = np.array(car_detections) if car_detections else None
+
+        # Store image metadata for COCO format
+        file_name = Path(image_name).name
+        height, width = img_info["height"], img_info["width"]
+
+        coco_output["images"].append({
+            "id": image_id,
+            "file_name": file_name,
+            "width": width,
+            "height": height
+        })
+
+        # Store bounding boxes for COCO format
+        for det in car_detections:
+            x1, y1, x2, y2, score, _ = det
+            w, h = x2 - x1, y2 - y1
+            bbox = [x1, y1, w, h]  # COCO format: [x, y, width, height]
+
+            coco_output["annotations"].append({
+                "id": annotation_id,
+                "image_id": image_id,
+                "category_id": 2,
+                "bbox": bbox,
+                "area": w * h,
+                "iscrowd": 0
+            })
+            annotation_id += 1
+
+        image_id += 1  # Increment image ID
+
+    # Save JSON after processing all images
+    output_json = f"annotations/cars_{time.strftime('%Y%m%d_%H%M%S')}.json"
+    os.makedirs("annotations", exist_ok=True)
+    with open(output_json, "w") as f:
+        json.dump(coco_output, f, indent=4)
+
+    print(f"🚀 COCO JSON saved at: {output_json}")
 
 
 def imageflow_demo(predictor, vis_folder, current_time, args):
@@ -228,6 +277,18 @@ def imageflow_demo(predictor, vis_folder, current_time, args):
         ret_val, frame = cap.read()
         if ret_val:
             outputs, img_info = predictor.inference(frame)
+            
+            car_class_id = 2
+            car_detections = []
+            if outputs[0] is not None:
+                for output in outputs[0]:
+                    x1, y1, x2, y2, score, cls_id = output[:6]
+                    if int(cls_id) == car_class_id and score > args.conf:  # Keep only cars
+                        car_detections.append([x1, y1, x2, y2, score, int(cls_id)])
+
+            # Overwrite outputs to keep only car detections
+            outputs[0] = np.array(car_detections) if car_detections else None
+
             result_frame = predictor.visual(outputs[0], img_info, predictor.confthre)
             if args.save_result:
                 vid_writer.write(result_frame)
