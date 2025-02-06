@@ -194,8 +194,25 @@ class Predictor(object):
 
 def image_demo(predictor, vis_folder, path, current_time, save_result):
     coco_output = {
+        "info": {
+            "description": "Empty COCO annotation",
+            "version": "1.0",
+            "year": 2025,
+            "date_created": ""
+        },
+        "licenses": [],
         "images": [],
         "annotations": [],
+        "categories": [
+            {"id": 0, "name": "person"},
+            {"id": 1, "name": "bicycle"},
+            {"id": 2, "name": "Car"},
+            {"id": 3, "name": "motorcycle"},
+            {"id": 4, "name": "airplane"},
+            {"id": 5, "name": "bus"},
+            {"id": 6, "name": "train"},
+            {"id": 7, "name": "truck"}
+        ]
     }
     annotation_id = 1
 
@@ -225,12 +242,22 @@ def image_demo(predictor, vis_folder, path, current_time, save_result):
             for detection in outputs_np:
                 # Unpack correctly based on shape (num_detections, 7)
                 x_min, y_min, x_max, y_max, obj_score, class_score, class_id = map(float, detection)
-                if int(class_id) == 2:
+                
+                
+                if int(class_id) == 2: # for only car
 
                     # Convert bbox coordinates to integers
                     x_min, y_min, x_max, y_max = map(int, [x_min, y_min, x_max, y_max])
                     bbox_width = x_max - x_min
                     bbox_height = y_max - y_min
+                    text = os.path.basename(image_name)
+
+                    # Split by "_" and extract values
+                    parts = text.split("_")
+
+                    d_value = int(parts[1][1:])  # Extract number after 'D'
+                    s_value = int(parts[2][1:])  # Extract number after 'S'
+                    n_value = int(parts[3][1:])  # Extract number after 'N'
 
                     coco_output["annotations"].append({
                         "id": annotation_id,
@@ -239,12 +266,15 @@ def image_demo(predictor, vis_folder, path, current_time, save_result):
                         "bbox": [x_min, y_min, bbox_width, bbox_height],
                         "score": float(class_score),  # Convert NumPy float32 to Python float
                         "area": float(bbox_width * bbox_height),
-                        "iscrowd": 0
+                        "iscrowd": 0,
+                        "radar_distance": d_value,
+                        "radar_speed": s_value,
+                        "radar_snr": n_value
                     })
                     annotation_id += 1
 
     # Save JSON file
-    json_path = os.path.join(vis_folder, "coco_annotations.json")
+    json_path = os.path.join("datasets/mycvatout/annotations", "instances_train.json")
     with open(json_path, "w") as json_file:
         json.dump(coco_output, json_file, indent=4)
 
