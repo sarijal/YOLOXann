@@ -9,6 +9,7 @@ import argparse
 import os
 import time
 from loguru import logger
+import numpy as np
 
 import cv2
 
@@ -189,76 +190,65 @@ class Predictor(object):
 
 
 
+
+
 def image_demo(predictor, vis_folder, path, current_time, save_result):
+    coco_output = {
+        "images": [],
+        "annotations": [],
+    }
+    annotation_id = 1
+
     if os.path.isdir(path):
         files = get_image_list(path)
     else:
         files = [path]
+
     files.sort()
-
-    car_class_id = 2  # COCO class ID for car
-
-    coco_output = {
-        "images": [],
-        "annotations": [],
-        "categories": [{"id": car_class_id, "name": "car", "supercategory": "vehicle"}]
-    }
-    
-    annotation_id = 1
-
-    for image_id, image_name in enumerate(files):
+    for idx, image_name in enumerate(files):
         outputs, img_info = predictor.inference(image_name)
 
-        if outputs[0] is not None:
-            bboxes = outputs[0].bbox.cpu().numpy()  # Bounding boxes
-            scores = outputs[0].score.cpu().numpy()  # Confidence scores
-            labels = outputs[0].cls.cpu().numpy()  # Class labels
-            
-            # Filter only car detections
-            for i in range(len(bboxes)):
-                if int(labels[i]) == car_class_id:
-                    x_min, y_min, x_max, y_max = bboxes[i]
-                    width, height = x_max - x_min, y_max - y_min
-                    
+        height, width = img_info["height"], img_info["width"]
+        image_id = idx + 1
+
+        coco_output["images"].append({
+            "id": image_id,
+            "file_name": os.path.basename(image_name),
+            "width": int(width),
+            "height": int(height)
+        })
+
+        # Ensure outputs is not empty
+        if outputs[0] is not None and outputs[0].size(0) > 0:
+            outputs_np = outputs[0].cpu().numpy()  # Convert tensor to NumPy array
+
+            for detection in outputs_np:
+                # Unpack correctly based on shape (num_detections, 7)
+                x_min, y_min, x_max, y_max, obj_score, class_score, class_id = map(float, detection)
+                if int(class_id) == 2:
+
+                    # Convert bbox coordinates to integers
+                    x_min, y_min, x_max, y_max = map(int, [x_min, y_min, x_max, y_max])
+                    bbox_width = x_max - x_min
+                    bbox_height = y_max - y_min
+
                     coco_output["annotations"].append({
                         "id": annotation_id,
                         "image_id": image_id,
-                        "category_id": car_class_id,
-                        "bbox": [float(x_min), float(y_min), float(width), float(height)],
-                        "area": float(width * height),
+                        "category_id": int(class_id) ,  
+                        "bbox": [x_min, y_min, bbox_width, bbox_height],
+                        "score": float(class_score),  # Convert NumPy float32 to Python float
+                        "area": float(bbox_width * bbox_height),
                         "iscrowd": 0
                     })
                     annotation_id += 1
 
-        result_image = predictor.visual(outputs[0], img_info, predictor.confthre)
-        if save_result:
-            save_folder = os.path.join(
-                vis_folder, time.strftime("%Y_%m_%d_%H_%M_%S", current_time)
-            )
-            os.makedirs(save_folder, exist_ok=True)
-            save_file_name = os.path.join(save_folder, os.path.basename(image_name))
-            logger.info("Saving detection result in {}".format(save_file_name))
-            cv2.imwrite(save_file_name, result_image)
-        
-        # Add image metadata to JSON
-        coco_output["images"].append({
-            "id": image_id,
-            "file_name": os.path.basename(image_name),
-            "width": img_info["width"],
-            "height": img_info["height"]
-        })
-
-        ch = cv2.waitKey(0)
-        if ch == 27 or ch == ord("q") or ch == ord("Q"):
-            break
-
-    # Save COCO JSON output
-    json_path = os.path.join(vis_folder, "car_annotations.json")
+    # Save JSON file
+    json_path = os.path.join(vis_folder, "coco_annotations.json")
     with open(json_path, "w") as json_file:
         json.dump(coco_output, json_file, indent=4)
-    
-    logger.info(f"Saved COCO annotations to {json_path}")
 
+    logger.info(f"COCO annotations saved at {json_path}")
 
 
 def imageflow_demo(predictor, vis_folder, current_time, args):
