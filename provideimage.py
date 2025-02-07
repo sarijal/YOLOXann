@@ -3,6 +3,7 @@ import os
 import cv2
 import pandas as pd
 from datetime import timedelta
+import argparse
 
 def save_video_frame(video_capture, frame_index, output_path):
     """
@@ -69,4 +70,13 @@ def generate_dataset(radar_csv_path, fps_csv_path, video_path):
 
     cap.release()
     
-generate_dataset("datasets/20241124_133806W_radar.csv", "datasets/20241124_133806_fps.csv", "datasets/20241124_133806_back_camera.mp4")
+# generate_dataset("datasets/20241124_133806W_radar.csv", "datasets/20241124_133806_fps.csv", "datasets/20241124_133806_back_camera.mp4")
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Generate dataset from radar, fps CSV files and video.")
+    parser.add_argument("radar_csv", type=str, help="Path to the radar CSV file")
+    parser.add_argument("fps_csv", type=str, help="Path to the FPS CSV file")
+    parser.add_argument("video", type=str, help="Path to the video file")
+
+    args = parser.parse_args()
+
+    generate_dataset(args.radar_csv, args.fps_csv, args.video)

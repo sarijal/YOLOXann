@@ -188,14 +188,10 @@ class Predictor(object):
         return vis_res
 
 
-
-
-
-
 def image_demo(predictor, vis_folder, path, current_time, save_result):
     coco_output = {
         "info": {
-            "description": "Empty COCO annotation",
+            "description": "COCO-formatted annotations",
             "version": "1.0",
             "year": 2025,
             "date_created": ""
@@ -214,62 +210,79 @@ def image_demo(predictor, vis_folder, path, current_time, save_result):
             {"id": 7, "name": "truck"}
         ]
     }
+    
     annotation_id = 1
 
-    if os.path.isdir(path):
-        files = get_image_list(path)
-    else:
-        files = [path]
-
+    # Get the list of images
+    files = get_image_list(path) if os.path.isdir(path) else [path]
     files.sort()
+
     for idx, image_name in enumerate(files):
         outputs, img_info = predictor.inference(image_name)
 
-        height, width = img_info["height"], img_info["width"]
+        # Get original image size
+        orig_height, orig_width = img_info["height"], img_info["width"]
+        model_size = 640  # YOLOX input size
+
+        # Compute letterbox scaling
+        scale = min(model_size / orig_width, model_size / orig_height)
+
         image_id = idx + 1
 
         coco_output["images"].append({
             "id": image_id,
             "file_name": os.path.basename(image_name),
-            "width": int(width),
-            "height": int(height)
+            "width": int(orig_width),
+            "height": int(orig_height)
         })
 
-        # Ensure outputs is not empty
         if outputs[0] is not None and outputs[0].size(0) > 0:
-            outputs_np = outputs[0].cpu().numpy()  # Convert tensor to NumPy array
+            outputs_np = outputs[0].cpu().numpy()
 
             for detection in outputs_np:
-                # Unpack correctly based on shape (num_detections, 7)
                 x_min, y_min, x_max, y_max, obj_score, class_score, class_id = map(float, detection)
-                
-                
-                if int(class_id) == 2: # for only car
 
-                    # Convert bbox coordinates to integers
+                if int(class_id) == 2:  # Only process cars
+
+                  
+
+                    x_min = max(0, round((x_min ) / scale))
+                    x_max = min(orig_width, round((x_max ) / scale))
+                    y_min = max(0, round((y_min) / scale))
+                    y_max = min(orig_height, round((y_max ) / scale))
+
+                    # Ensure bbox width/height are positive integers
+                    bbox_width = max(1, x_max - x_min)
+                    bbox_height = max(1, y_max - y_min)
+
+                    # Convert to integer (fix floating-point errors)
                     x_min, y_min, x_max, y_max = map(int, [x_min, y_min, x_max, y_max])
-                    bbox_width = x_max - x_min
-                    bbox_height = y_max - y_min
-                    text = os.path.basename(image_name)
 
-                    # Split by "_" and extract values
-                    parts = text.split("_")
 
-                    d_value = int(parts[1][1:])  # Extract number after 'D'
-                    s_value = int(parts[2][1:])  # Extract number after 'S'
-                    n_value = int(parts[3][1:])  # Extract number after 'N'
+                    # Parse radar attributes from filename
+                    parts = os.path.basename(image_name).split("_")
+                    try:
+                        d_value = int(parts[1][1:])  # Extract number after 'D'
+                        s_value = int(parts[2][1:])  # Extract number after 'S'
+                        n_value = int(parts[3][1:])  # Extract number after 'N'
+                    except (IndexError, ValueError) as e:
+                        logger.error(f"Filename parsing failed: {image_name} -> {e}")
+                        continue  
 
                     coco_output["annotations"].append({
                         "id": annotation_id,
                         "image_id": image_id,
-                        "category_id": int(class_id) ,  
+                        "category_id": 2,  # Cars
                         "bbox": [x_min, y_min, bbox_width, bbox_height],
-                        "score": float(class_score),  # Convert NumPy float32 to Python float
+                        "score": float(class_score),
                         "area": float(bbox_width * bbox_height),
+                        "segmentation": [],
                         "iscrowd": 0,
-                        "radar_distance": d_value,
-                        "radar_speed": s_value,
-                        "radar_snr": n_value
+                        "attributes": {  
+                            "radar_distance": d_value,
+                            "radar_speed": s_value,
+                            "radar_snr": n_value
+                        }
                     })
                     annotation_id += 1
 
@@ -279,6 +292,7 @@ def image_demo(predictor, vis_folder, path, current_time, save_result):
         json.dump(coco_output, json_file, indent=4)
 
     logger.info(f"COCO annotations saved at {json_path}")
+
 
 
 def imageflow_demo(predictor, vis_folder, current_time, args):
