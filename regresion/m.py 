@@ -1,0 +1,26 @@
+import json
+import csv
+
+# Load the COCO JSON file
+json_file = "instances_train.json"  # Replace with your actual JSON file
+csv_file = "output.csv"  # Output CSV file
+
+with open(json_file, "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+# Extract relevant fields
+csv_data = [["image_id", "x", "y", "width", "height", "radar_distance"]]
+
+for annotation in data["annotations"]:
+    image_id = annotation["image_id"]
+    bbox = annotation["bbox"]
+    radar_distance = annotation["attributes"].get("radar_distance", "")
+
+    csv_data.append([image_id, *bbox, radar_distance])
+
+# Write to CSV
+with open(csv_file, "w", newline="", encoding="utf-8") as f:
+    writer = csv.writer(f)
+    writer.writerows(csv_data)
+
+print(f"CSV file saved as {csv_file}")
