@@ -206,7 +206,7 @@ tags
 # output
 docs/api
 .code-workspace.code-workspace
-*.pkl
+# *.pkl
 *.npy
 *.pth
 *.onnx

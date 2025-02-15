@@ -4,11 +4,14 @@
 
 import cv2
 import numpy as np
+import joblib
+import pandas as pd
 
 __all__ = ["vis"]
 
 
 def vis(img, boxes, scores, cls_ids, conf=0.5, class_names=None):
+    model = joblib.load("regresion/random_forest_model.pkl")
 
     for i in range(len(boxes)):
         box = boxes[i]
@@ -39,8 +42,10 @@ def vis(img, boxes, scores, cls_ids, conf=0.5, class_names=None):
         )
         cv2.putText(img, text, (x0, y0 + txt_size[1]), font, 0.4, txt_color, thickness=1)
         # 🔥 Add "yess" inside the bounding box
-        cv2.putText(img, "yess", (x0 + 10, y0 + 30), font, 0.6, (255, 255, 255), thickness=2)
-        print("yesssssssssssss")
+        feature_names = ["x", "y", "width", "height"]  # Replace with actual feature names used during training
+        new_input = pd.DataFrame([[x0, y0, (x1 - x0), (y1 - y0)]], columns=feature_names)
+        y_pred = model.predict(new_input)
+        cv2.putText(img, f"D: {y_pred[0]:.1f}", (x0 + 10, y0 + 30), font, 0.6, (255, 255, 255), thickness=2)
     return img
 
 
